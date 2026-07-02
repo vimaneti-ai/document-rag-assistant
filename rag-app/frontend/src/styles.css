@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #0b0f18;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.upload-zone {
+  cursor: pointer;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 22px 14px;
+  text-align: center;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.upload-zone:hover,
+.upload-zone-active {
+  border-color: rgba(91, 156, 255, 0.9);
+  background: rgba(47, 124, 246, 0.1);
+}
+
+.sidebar-section {
+  margin-top: 22px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.status-pill-live,
+.status-pill-idle {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-pill-live {
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+}
+
+.status-pill-idle {
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+}
+
+.clear-button,
+.send-button {
+  border-radius: 6px;
+  font-weight: 700;
+  transition: background 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+.clear-button {
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+  padding: 10px 12px;
+}
+
+.clear-button:hover {
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.assistant-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(21, 29, 43, 0.82);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.18);
+  max-width: 84%;
+  padding: 16px;
+}
+
+.usage-good,
+.usage-warn {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-weight: 700;
+}
+
+.usage-good {
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+}
+
+.usage-warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+}
+
+.source-toggle {
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #f8fafc;
+  outline: none;
+  padding: 13px 14px;
+}
+
+.chat-input:focus {
+  border-color: rgba(91, 156, 255, 0.9);
+}
+
+.send-button {
+  background: #2f7cf6;
+  color: #ffffff;
+  min-width: 86px;
+  padding: 0 18px;
+}
+
+.send-button:hover {
+  background: #5b9cff;
+}
+
+.send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+}
+
+.typing-indicator span {
+  animation: typing 1s infinite ease-in-out;
+  background: #94a3b8;
+  border-radius: 999px;
+  display: block;
+  height: 7px;
+  width: 7px;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (max-width: 1023px) {
+  .assistant-card {
+    max-width: 100%;
+  }
+}
