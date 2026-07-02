@@ -12,13 +12,15 @@ The application source lives in [`rag-app/`](./rag-app), with separate backend a
 - Embeddings: `all-MiniLM-L6-v2`
 - LLM: `claude-haiku-4-5` with prompt caching
 - Documents: PDF, TXT, DOCX, CSV, MD
+- Access control: HTTP Basic authentication for API and UI access
+- Upload guardrails: supported file checks and configurable file-size limit
 
 ## Quick Start
 
 ```bash
 cd rag-app/backend
 cp .env.example .env
-# edit .env and set ANTHROPIC_API_KEY
+# edit .env and set ANTHROPIC_API_KEY plus APP_BASIC_AUTH_USERNAME/PASSWORD
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -40,6 +42,8 @@ cd ../frontend
 ```
 
 Open `http://localhost:5173`.
+
+Sign in with the username and password from `rag-app/backend/.env`.
 
 ## Documentation
 
