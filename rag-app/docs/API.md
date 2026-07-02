@@ -2,6 +2,19 @@
 
 Base URL during local development: `http://localhost:8000`
 
+All endpoints require HTTP Basic authentication. Use the credentials configured in backend environment variables:
+
+```env
+APP_BASIC_AUTH_USERNAME=admin
+APP_BASIC_AUTH_PASSWORD=use-a-long-random-password
+```
+
+Example:
+
+```bash
+curl -u admin:use-a-long-random-password http://localhost:8000/status
+```
+
 ## `GET /status`
 
 Returns the current document/index state.
@@ -28,9 +41,19 @@ Supported file types:
 - CSV
 - MD
 
+The backend rejects unsupported extensions and files larger than `MAX_UPLOAD_MB`. The default limit is `25` MB.
+
 Form field:
 
 - `file`: uploaded document
+
+Example:
+
+```bash
+curl -u admin:use-a-long-random-password \
+  -F "file=@example.pdf" \
+  http://localhost:8000/upload
+```
 
 Response:
 
@@ -41,6 +64,12 @@ Response:
   "summary": "Document processed and indexed."
 }
 ```
+
+Possible upload errors:
+
+- `Unsupported file type. Supported types: .csv, .docx, .md, .pdf, .txt`
+- `Uploaded file is too large. Maximum size is 25 MB.`
+- `Uploaded file is empty.`
 
 ## `POST /chat`
 
@@ -62,6 +91,15 @@ Request:
     }
   ]
 }
+```
+
+Example:
+
+```bash
+curl -u admin:use-a-long-random-password \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What are the main findings?","conversation_history":[]}' \
+  http://localhost:8000/chat
 ```
 
 Response:

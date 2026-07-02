@@ -17,7 +17,10 @@ Set environment variables:
 
 ```env
 ANTHROPIC_API_KEY=your_key_here
+APP_BASIC_AUTH_USERNAME=admin
+APP_BASIC_AUTH_PASSWORD=use-a-long-random-password
 CORS_ORIGINS=https://your-frontend-domain.com
+MAX_UPLOAD_MB=25
 MAX_CACHED_CONTEXT_CHARS=120000
 ```
 
@@ -28,6 +31,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 For a managed deployment, put this behind the platform's process manager or a reverse proxy. Persist `backend/faiss_index/` if you want uploaded indexes to survive restarts.
+
+Use HTTPS in front of the backend. HTTP Basic credentials must not be sent over plain HTTP on a public network.
+
+For a public demo, local FAISS storage is acceptable if losing uploaded indexes on restart is fine. For real production, use S3 for uploaded files, PostgreSQL for metadata and chat history, and EFS, pgvector, or Qdrant for vector storage.
 
 ## Frontend
 
@@ -46,6 +53,8 @@ npm run build
 ```
 
 Deploy `frontend/dist/` to any static host.
+
+Users will be prompted to sign in with the backend Basic Auth username and password.
 
 ## Local Proxy
 

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { clearIndex, getStatus, sendMessage, uploadDocument } from './api/client'
+import { clearIndex, getStatus, sendMessage, uploadDocument, type AuthCredentials } from './api/client'
 import { ChatWindow } from './components/ChatWindow'
 import { Sidebar } from './components/Sidebar'
 import type { Message, StatusResponse, UsageStats } from './types'
@@ -10,7 +10,10 @@ const emptyStatus: StatusResponse = {
   total_chunks: 0,
 }
 
+const storedAuthKey = 'adaptive-rag-basic-auth'
+
 export default function App() {
+  const [credentials, setCredentials] = useState<AuthCredentials | null>(() => readStoredAuth())
   const [status, setStatus] = useState<StatusResponse>(emptyStatus)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -22,24 +25,51 @@ export default function App() {
   const [lastUsage, setLastUsage] = useState<UsageStats | undefined>()
 
   useEffect(() => {
-    void refreshStatus()
-  }, [])
+    if (credentials) {
+      void refreshStatus(credentials)
+    }
+  }, [credentials])
 
   const questionsAsked = useMemo(
     () => messages.filter((message) => message.role === 'user').length,
     [messages],
   )
 
-  async function refreshStatus() {
-    const nextStatus = await getStatus()
+  async function refreshStatus(auth: AuthCredentials) {
+    const nextStatus = await getStatus(auth)
     setStatus(nextStatus)
   }
 
+  async function handleLogin(nextCredentials: AuthCredentials) {
+    setError(null)
+    try {
+      const nextStatus = await getStatus(nextCredentials)
+      sessionStorage.setItem(storedAuthKey, JSON.stringify(nextCredentials))
+      setCredentials(nextCredentials)
+      setStatus(nextStatus)
+    } catch (err) {
+      setError(readError(err))
+    }
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(storedAuthKey)
+    setCredentials(null)
+    setStatus(emptyStatus)
+    setMessages([])
+    setInput('')
+    setSessionCost(0)
+    setCacheHits(0)
+    setLastUsage(undefined)
+    setError(null)
+  }
+
   async function handleUpload(file: File) {
+    if (!credentials) return
     setError(null)
     setIsUploading(true)
     try {
-      const uploaded = await uploadDocument(file)
+      const uploaded = await uploadDocument(file, credentials)
       setStatus({
         document_loaded: true,
         document_name: uploaded.filename,
@@ -64,7 +94,7 @@ export default function App() {
   async function handleSend(event: FormEvent) {
     event.preventDefault()
     const question = input.trim()
-    if (!question || isLoading || !status.document_loaded) return
+    if (!credentials || !question || isLoading || !status.document_loaded) return
 
     setError(null)
     setInput('')
@@ -74,7 +104,7 @@ export default function App() {
     setIsLoading(true)
 
     try {
-      const response = await sendMessage(question, messages)
+      const response = await sendMessage(question, messages, credentials)
       const assistantMessage: Message = {
         role: 'assistant',
         content: response.answer,
@@ -94,14 +124,19 @@ export default function App() {
   }
 
   async function handleClear() {
+    if (!credentials) return
     setError(null)
-    await clearIndex()
+    await clearIndex(credentials)
     setStatus(emptyStatus)
     setMessages([])
     setInput('')
     setSessionCost(0)
     setCacheHits(0)
     setLastUsage(undefined)
+  }
+
+  if (!credentials) {
+    return <LoginScreen error={error} onLogin={handleLogin} />
   }
 
   return (
@@ -117,6 +152,11 @@ export default function App() {
         onClear={handleClear}
       />
       <main className="flex min-h-screen flex-1 flex-col bg-[radial-gradient(circle_at_top_left,rgba(47,124,246,0.14),transparent_34%),#0b0f18]">
+        <div className="flex justify-end border-b border-white/10 px-5 py-3 lg:px-8">
+          <button className="source-toggle" onClick={handleLogout}>
+            Sign out
+          </button>
+        </div>
         <KpiRow
           questionsAsked={questionsAsked}
           cacheHits={cacheHits}
@@ -146,6 +186,67 @@ export default function App() {
           <EmptyState />
         )}
       </main>
+    </div>
+  )
+}
+
+function LoginScreen({
+  error,
+  onLogin,
+}: {
+  error: string | null
+  onLogin: (credentials: AuthCredentials) => Promise<void>
+}) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    setIsSubmitting(true)
+    try {
+      await onLogin({ username, password })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(47,124,246,0.18),transparent_34%),#0b0f18] px-5 text-slate-100">
+      <form className="w-full max-w-sm rounded border border-white/10 bg-ink-850 p-6 shadow-2xl shadow-black/30" onSubmit={handleSubmit}>
+        <div className="mb-6">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded bg-accent-500 text-sm font-black text-white">
+            AR
+          </div>
+          <h1 className="text-xl font-semibold text-white">Adaptive RAG</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Sign in to access the document assistant.</p>
+        </div>
+        {error && <div className="mb-4 rounded border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">{error}</div>}
+        <label className="mb-3 block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Username</span>
+          <input
+            className="chat-input w-full"
+            value={username}
+            autoComplete="username"
+            onChange={(event) => setUsername(event.target.value)}
+            required
+          />
+        </label>
+        <label className="mb-5 block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Password</span>
+          <input
+            className="chat-input w-full"
+            type="password"
+            value={password}
+            autoComplete="current-password"
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </label>
+        <button className="send-button h-11 w-full" disabled={isSubmitting}>
+          {isSubmitting ? 'Signing in...' : 'Sign in'}
+        </button>
+      </form>
     </div>
   )
 }
@@ -213,4 +314,16 @@ function readError(error: unknown) {
     return response?.data?.detail || 'Request failed.'
   }
   return error instanceof Error ? error.message : 'Something went wrong.'
+}
+
+function readStoredAuth(): AuthCredentials | null {
+  const raw = sessionStorage.getItem(storedAuthKey)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as AuthCredentials
+    if (parsed.username && parsed.password) return parsed
+  } catch {
+    sessionStorage.removeItem(storedAuthKey)
+  }
+  return null
 }
