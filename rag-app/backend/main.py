@@ -129,3 +129,6 @@ async def status(_: str = Depends(require_auth)):
 async def clear(_: str = Depends(require_auth)):
     rag_engine.clear()
     return {"success": True}
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
