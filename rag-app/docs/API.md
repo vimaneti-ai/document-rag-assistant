@@ -49,6 +49,9 @@ Response:
 
 Uploads, chunks, embeds, and indexes one document.
 
+The frontend can include an operation UUID and read live stage progress while
+the request runs. The final response includes the completed pipeline trace.
+
 Supported file types:
 
 - PDF
@@ -62,6 +65,7 @@ The backend rejects unsupported extensions and files larger than `MAX_UPLOAD_MB`
 Form field:
 
 - `file`: uploaded document
+- `operation_id`: optional UUID used for progress tracking
 
 Example:
 
@@ -77,9 +81,40 @@ Response:
 {
   "filename": "example.pdf",
   "chunks": 42,
-  "summary": "Document processed and indexed."
+  "summary": "Document processed and indexed.",
+  "pipeline": {
+    "operation_id": "37d1de9d-cf15-45cb-b76a-5ccf4957809b",
+    "kind": "upload",
+    "status": "completed",
+    "elapsed_ms": 2840,
+    "steps": []
+  },
+  "visualization": {
+    "document_name": "example.pdf",
+    "character_count": 14360,
+    "estimated_tokens": 3590,
+    "total_chunks": 18,
+    "embedding_dimension": 384,
+    "index_name": "document-rag-assistant",
+    "namespace": "adaptive-rag",
+    "chunks": [
+      {
+        "index": 1,
+        "start": 0,
+        "end": 996,
+        "characters": 996,
+        "overlap_with_previous": 0,
+        "embedding_preview": [0.12, -0.08, 0.03]
+      }
+    ]
+  }
 }
 ```
+
+The visualization contains up to three real chunk examples. Character ranges
+come from the extracted source text, and embedding previews contain the first
+three values of the actual 384-dimensional vectors sent to Pinecone.
+`estimated_tokens` is approximate and appears with `~` in the interface.
 
 Possible upload errors:
 
@@ -105,7 +140,8 @@ Request:
       "role": "assistant",
       "content": "The document discusses..."
     }
-  ]
+  ],
+  "operation_id": "37d1de9d-cf15-45cb-b76a-5ccf4957809b"
 }
 ```
 
@@ -131,9 +167,49 @@ Response:
     "cache_write_tokens": 0,
     "cost_usd": 0.003,
     "cache_hit": true
+  },
+  "pipeline": {
+    "operation_id": "37d1de9d-cf15-45cb-b76a-5ccf4957809b",
+    "kind": "chat",
+    "status": "completed",
+    "elapsed_ms": 1530,
+    "steps": []
   }
 }
 ```
+
+## `GET /operations/{operation_id}`
+
+Returns live progress for an upload or chat request. Authentication is
+required. Each step includes its state, detail, and elapsed milliseconds.
+
+```json
+{
+  "operation_id": "37d1de9d-cf15-45cb-b76a-5ccf4957809b",
+  "kind": "chat",
+  "status": "running",
+  "elapsed_ms": 842,
+  "steps": [
+    {
+      "id": "query_embedding",
+      "label": "Embed question",
+      "status": "completed",
+      "detail": "Query vector has 384 dimensions",
+      "duration_ms": 74
+    },
+    {
+      "id": "retrieval",
+      "label": "Search Pinecone",
+      "status": "running",
+      "detail": "Requesting top 4 matches",
+      "duration_ms": 31
+    }
+  ]
+}
+```
+
+Operation state remains in backend memory for one hour. It supports temporary
+UI progress and is not persistent audit history.
 
 ## `DELETE /clear`
 

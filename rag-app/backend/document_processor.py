@@ -32,14 +32,35 @@ def split_documents(
     chunk_size: int = 1000,
     chunk_overlap: int = 150,
 ) -> List[Document]:
+    document_offsets = []
+    offset = 0
+    for document_index, document in enumerate(documents):
+        document.metadata["_document_index"] = document_index
+        document_offsets.append(offset)
+        offset += len(document.page_content) + 2
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
     chunks = splitter.split_documents(documents)
+    cursors = [0] * len(documents)
     for index, chunk in enumerate(chunks):
+        document_index = int(chunk.metadata.pop("_document_index", 0))
+        content = documents[document_index].page_content
+        search_start = max(0, cursors[document_index] - chunk_overlap - 20)
+        local_start = content.find(chunk.page_content, search_start)
+        if local_start < 0:
+            local_start = content.find(chunk.page_content)
+        if local_start < 0:
+            local_start = cursors[document_index]
+        local_end = local_start + len(chunk.page_content)
+        cursors[document_index] = local_end
+
         chunk.metadata["chunk_index"] = index
+        chunk.metadata["char_start"] = document_offsets[document_index] + local_start
+        chunk.metadata["char_end"] = document_offsets[document_index] + local_end
     return chunks
 
 

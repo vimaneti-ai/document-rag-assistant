@@ -1,5 +1,11 @@
 import axios from 'axios'
-import type { ChatResponse, Message, StatusResponse, UploadResponse } from '../types'
+import type {
+  ChatResponse,
+  Message,
+  PipelineOperation,
+  StatusResponse,
+  UploadResponse,
+} from '../types'
 
 export interface AuthCredentials {
   username: string
@@ -23,9 +29,11 @@ function authConfig(credentials: AuthCredentials) {
 export async function uploadDocument(
   file: File,
   credentials: AuthCredentials,
+  operationId: string,
 ): Promise<UploadResponse> {
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('operation_id', operationId)
   const response = await api.post<UploadResponse>('/upload', formData, {
     ...authConfig(credentials),
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -37,12 +45,14 @@ export async function sendMessage(
   question: string,
   history: Message[],
   credentials: AuthCredentials,
+  operationId: string,
 ): Promise<ChatResponse> {
   const response = await api.post<ChatResponse>(
     '/chat',
     {
       question,
       conversation_history: history.map(({ role, content }) => ({ role, content })),
+      operation_id: operationId,
     },
     authConfig(credentials),
   )
@@ -56,4 +66,15 @@ export async function getStatus(credentials: AuthCredentials): Promise<StatusRes
 
 export async function clearIndex(credentials: AuthCredentials): Promise<void> {
   await api.delete('/clear', authConfig(credentials))
+}
+
+export async function getOperation(
+  operationId: string,
+  credentials: AuthCredentials,
+): Promise<PipelineOperation> {
+  const response = await api.get<PipelineOperation>(
+    `/operations/${operationId}`,
+    authConfig(credentials),
+  )
+  return response.data
 }

@@ -80,7 +80,7 @@ class RAGEngineTests(unittest.TestCase):
             ),
         ]
 
-        self.engine.build_index(chunks, "report.pdf")
+        visualization = self.engine.build_index(chunks, "report.pdf")
 
         self.assertEqual(
             self.engine.status(),
@@ -90,6 +90,9 @@ class RAGEngineTests(unittest.TestCase):
                 "total_chunks": 2,
             },
         )
+        self.assertEqual(visualization["embedding_dimension"], EMBEDDING_DIMENSION)
+        self.assertEqual(visualization["total_chunks"], 2)
+        self.assertEqual(visualization["chunks"][0]["embedding_preview"], [1.0, 0.0, 0.0])
         context, sources = self.engine.retrieve_context("What was the margin?", k=1)
         self.assertIn("Revenue increased", context)
         self.assertEqual(sources, ["report.pdf - page 2 - chunk 1"])

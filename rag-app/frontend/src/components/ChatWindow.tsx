@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Message, UsageStats } from '../types'
 import { getCacheLabel, getCacheStatus } from '../utils/cache'
+import { PipelineTrace } from './PipelineVisualizer'
 
 interface ChatWindowProps {
   messages: Message[]
@@ -44,6 +45,7 @@ function MessageBubble({ message }: { message: Message }) {
       <div className="whitespace-pre-wrap text-sm leading-7 text-slate-100">{message.content}</div>
       {message.usage && <Usage usage={message.usage} />}
       {message.sources?.length ? <Sources sources={message.sources} /> : null}
+      {message.pipeline && <PipelineTrace operation={message.pipeline} />}
     </div>
   )
 }

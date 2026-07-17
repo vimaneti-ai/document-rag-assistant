@@ -1,8 +1,26 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { clearIndex, getStatus, sendMessage, uploadDocument, type AuthCredentials } from './api/client'
+import {
+  clearIndex,
+  getOperation,
+  getStatus,
+  sendMessage,
+  uploadDocument,
+  type AuthCredentials,
+} from './api/client'
 import { ChatWindow } from './components/ChatWindow'
+import {
+  createPendingOperation,
+  PipelineVisualizer,
+} from './components/PipelineVisualizer'
 import { Sidebar } from './components/Sidebar'
-import type { Message, StatusResponse, UsageStats } from './types'
+import type {
+  IngestionVisualization,
+  Message,
+  PipelineKind,
+  PipelineOperation,
+  StatusResponse,
+  UsageStats,
+} from './types'
 
 const emptyStatus: StatusResponse = {
   document_loaded: false,
@@ -32,6 +50,10 @@ export default function App() {
   const [sessionCost, setSessionCost] = useState(0)
   const [cacheHits, setCacheHits] = useState(0)
   const [lastUsage, setLastUsage] = useState<UsageStats | undefined>()
+  const [pipeline, setPipeline] = useState<PipelineOperation | null>(null)
+  const [uploadPipeline, setUploadPipeline] = useState<PipelineOperation | null>(null)
+  const [ingestionVisualization, setIngestionVisualization] =
+    useState<IngestionVisualization | null>(null)
 
   useEffect(() => {
     if (credentials) {
@@ -91,6 +113,30 @@ export default function App() {
     }
   }, [credentials])
 
+  useEffect(() => {
+    if (!credentials || !pipeline || ['completed', 'failed'].includes(pipeline.status)) return
+
+    let cancelled = false
+    async function refreshOperation() {
+      try {
+        const nextOperation = await getOperation(pipeline!.operation_id, credentials!)
+        if (!cancelled) {
+          setPipeline(nextOperation)
+          if (nextOperation.kind === 'upload') setUploadPipeline(nextOperation)
+        }
+      } catch {
+        // The POST request can reach the server just after the first polling attempt.
+      }
+    }
+
+    void refreshOperation()
+    const intervalId = window.setInterval(() => void refreshOperation(), 400)
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [credentials, pipeline?.operation_id, pipeline?.status])
+
   const questionsAsked = useMemo(
     () => messages.filter((message) => message.role === 'user').length,
     [messages],
@@ -128,6 +174,9 @@ export default function App() {
     setSessionCost(0)
     setCacheHits(0)
     setLastUsage(undefined)
+    setPipeline(null)
+    setUploadPipeline(null)
+    setIngestionVisualization(null)
     setError(message)
   }
 
@@ -135,8 +184,13 @@ export default function App() {
     if (!credentials) return
     setError(null)
     setIsUploading(true)
+    setIngestionVisualization(null)
+    const operationId = beginPipeline('upload')
     try {
-      const uploaded = await uploadDocument(file, credentials)
+      const uploaded = await uploadDocument(file, credentials, operationId)
+      setPipeline(uploaded.pipeline)
+      setUploadPipeline(uploaded.pipeline)
+      setIngestionVisualization(uploaded.visualization)
       setStatus({
         document_loaded: true,
         document_name: uploaded.filename,
@@ -146,6 +200,7 @@ export default function App() {
         {
           role: 'assistant',
           content: `Document indexed: ${uploaded.filename}\n\n${uploaded.summary}`,
+          pipeline: uploaded.pipeline,
         },
       ])
       setSessionCost(0)
@@ -169,14 +224,17 @@ export default function App() {
     const nextMessages = [...messages, userMessage]
     setMessages(nextMessages)
     setIsLoading(true)
+    const operationId = beginPipeline('chat')
 
     try {
-      const response = await sendMessage(question, messages, credentials)
+      const response = await sendMessage(question, messages, credentials, operationId)
+      setPipeline(response.pipeline)
       const assistantMessage: Message = {
         role: 'assistant',
         content: response.answer,
         usage: response.usage,
         sources: response.sources,
+        pipeline: response.pipeline,
       }
       setMessages([...nextMessages, assistantMessage])
       setSessionCost((cost) => cost + response.usage.cost_usd)
@@ -200,6 +258,17 @@ export default function App() {
     setSessionCost(0)
     setCacheHits(0)
     setLastUsage(undefined)
+    setPipeline(null)
+    setUploadPipeline(null)
+    setIngestionVisualization(null)
+  }
+
+  function beginPipeline(kind: PipelineKind) {
+    const operationId = createOperationId()
+    const pendingOperation = createPendingOperation(operationId, kind)
+    setPipeline(pendingOperation)
+    if (kind === 'upload') setUploadPipeline(pendingOperation)
+    return operationId
   }
 
   if (!credentials) {
@@ -230,6 +299,11 @@ export default function App() {
           totalCost={sessionCost}
           documentLoaded={status.document_loaded}
         />
+        <PipelineVisualizer
+          operation={pipeline}
+          uploadOperation={uploadPipeline}
+          ingestionVisualization={ingestionVisualization}
+        />
         {error && <div className="mx-5 mt-4 rounded border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100 lg:mx-8">{error}</div>}
         {status.document_loaded ? (
           <>
@@ -255,6 +329,17 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+function createOperationId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16)
+    const value = character === 'x' ? random : (random & 0x3) | 0x8
+    return value.toString(16)
+  })
 }
 
 function LoginScreen({

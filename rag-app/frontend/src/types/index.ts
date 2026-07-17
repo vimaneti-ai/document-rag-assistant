@@ -12,22 +12,67 @@ export interface Message {
   content: string
   usage?: UsageStats
   sources?: string[]
+  pipeline?: PipelineOperation
 }
 
 export interface UploadResponse {
   filename: string
   chunks: number
   summary: string
+  pipeline: PipelineOperation
+  visualization: IngestionVisualization
 }
 
 export interface ChatResponse {
   answer: string
   sources: string[]
   usage: UsageStats
+  pipeline: PipelineOperation
 }
 
 export interface StatusResponse {
   document_loaded: boolean
   document_name: string | null
   total_chunks: number
+}
+
+export type PipelineKind = 'upload' | 'chat'
+export type PipelineStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface PipelineStep {
+  id: string
+  label: string
+  status: PipelineStepStatus
+  detail: string | null
+  duration_ms: number | null
+}
+
+export interface PipelineOperation {
+  operation_id: string
+  kind: PipelineKind
+  status: PipelineStatus
+  started_at: number
+  elapsed_ms: number
+  steps: PipelineStep[]
+}
+
+export interface IngestionChunk {
+  index: number
+  start: number
+  end: number
+  characters: number
+  overlap_with_previous: number
+  embedding_preview: number[]
+}
+
+export interface IngestionVisualization {
+  document_name: string
+  character_count: number
+  estimated_tokens: number
+  total_chunks: number
+  embedding_dimension: number
+  index_name: string
+  namespace: string
+  chunks: IngestionChunk[]
 }

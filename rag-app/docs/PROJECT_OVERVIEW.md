@@ -19,6 +19,7 @@ This is not a Streamlit app. It has a separate FastAPI backend and React + TypeS
 - Ask Claude using document context, retrieved chunks, and chat history.
 - Use Claude prompt caching for repeated document-context questions.
 - Show token usage, cache hit/miss, and estimated cost in the UI.
+- Show live, timed processing stages for document uploads and questions.
 - Protect all backend API routes with HTTP Basic authentication.
 - Enforce upload extension checks and a configurable file-size limit.
 
@@ -59,6 +60,7 @@ Important files:
 Backend endpoints:
 
 - `GET /status`
+- `GET /operations/{operation_id}`
 - `POST /upload`
 - `POST /chat`
 - `DELETE /clear`
@@ -96,7 +98,15 @@ and returns to the sign-in screen.
 7. Pinecone stores vectors, chunk text, source metadata, and active-document state.
 8. The backend keeps a bounded document-context cache and can reconstruct it from Pinecone after restart.
 9. Claude attempts to summarize the uploaded document.
-10. Frontend receives filename, chunk count, and summary.
+10. Frontend receives filename, chunk count, summary, and the completed trace.
+11. While the request runs, the UI shows validation, extraction, chunking,
+    embedding, Pinecone indexing, and summary progress.
+12. After indexing, a document-flow diagram displays actual source character
+    ranges, neighboring overlap, sample embedding values, and the Pinecone
+    index and namespace.
+13. The latest document map remains visible while questions run. It is removed
+    only when the document is cleared or replaced, or the authenticated browser
+    session ends.
 ```
 
 ## Chat Flow
@@ -109,6 +119,8 @@ and returns to the sign-in screen.
 5. Claude receives the question, retrieved chunks, cached document context, and history.
 6. Backend returns answer, source labels, token usage, cache tokens, and estimated cost.
 7. Frontend displays the answer, source citations, cost, and cache hit/miss.
+8. The execution trace shows query embedding, retrieval, prompt assembly,
+   Claude generation, prompt-cache behavior, and citation attachment.
 ```
 
 ## Environment Variables

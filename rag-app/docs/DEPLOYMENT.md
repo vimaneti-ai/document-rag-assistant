@@ -37,6 +37,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 For a managed deployment, put this behind the platform's process manager or a reverse proxy. Pinecone persists vectors independently of the backend instance, so no vector-data volume is required.
 
+The frontend polls `GET /operations/{operation_id}` while uploads and questions
+run. Disable CDN caching for `/operations/*` and forward the `Authorization`
+header so each response reflects current backend progress.
+
 Use HTTPS in front of the backend. HTTP Basic credentials must not be sent over plain HTTP on a public network.
 
 The app currently keeps one active document in `PINECONE_NAMESPACE`. Use a separate namespace per user, tenant, or document collection before supporting multiple users. Add S3 for original files and PostgreSQL for users, metadata, and chat history when those records must persist.

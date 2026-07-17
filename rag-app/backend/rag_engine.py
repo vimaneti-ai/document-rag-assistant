@@ -1,6 +1,6 @@
 import os
 import uuid
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
@@ -14,6 +14,7 @@ RECORD_TYPE_CHUNK = "chunk"
 RECORD_TYPE_STATE = "state"
 UPSERT_BATCH_SIZE = 100
 FETCH_BATCH_SIZE = 100
+ProgressCallback = Callable[[str, str, Optional[str]], None]
 
 
 class RAGEngine:
@@ -42,17 +43,30 @@ class RAGEngine:
     def total_chunks(self) -> int:
         return int(self.state.get("total_chunks", 0))
 
-    def build_index(self, chunks: List[Document], document_name: str) -> None:
+    def build_index(
+        self,
+        chunks: List[Document],
+        document_name: str,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> dict:
         if not chunks:
             raise ValueError("The document did not contain any readable text.")
 
         texts = [chunk.page_content for chunk in chunks]
+        self._progress(on_progress, "embedding", "running", f"Encoding {len(texts)} chunks")
         vectors = self._get_embeddings().embed_documents(texts)
         if not vectors or len(vectors[0]) != EMBEDDING_DIMENSION:
             raise RuntimeError(
                 f"Embedding model returned an unexpected dimension. Expected {EMBEDDING_DIMENSION}."
             )
+        self._progress(
+            on_progress,
+            "embedding",
+            "completed",
+            f"{len(vectors)} vectors at {EMBEDDING_DIMENSION} dimensions",
+        )
 
+        self._progress(on_progress, "indexing", "running", "Connecting to Pinecone")
         index = self._get_index(create=True)
         document_id = uuid.uuid4().hex
         records = [
@@ -95,14 +109,34 @@ class RAGEngine:
 
         self.state = state
         self._context_cache = self._format_full_context(chunks)
+        self._progress(
+            on_progress,
+            "indexing",
+            "completed",
+            f"{len(records)} vectors stored in namespace {self.namespace}",
+        )
+        return self._ingestion_visualization(chunks, vectors, document_name)
 
-    def similarity_search(self, query: str, k: int = 4) -> List[Document]:
+    def similarity_search(
+        self,
+        query: str,
+        k: int = 4,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> List[Document]:
         self._ensure_state()
         document_id = self.state.get("document_id")
         if not document_id:
             raise ValueError("No document has been uploaded yet.")
 
+        self._progress(on_progress, "query_embedding", "running", "Encoding the question")
         query_vector = self._get_embeddings().embed_query(query)
+        self._progress(
+            on_progress,
+            "query_embedding",
+            "completed",
+            f"Query vector has {len(query_vector)} dimensions",
+        )
+        self._progress(on_progress, "retrieval", "running", f"Requesting top {k} matches")
         result = self._get_index(create=False).query(
             vector=query_vector,
             top_k=k,
@@ -116,10 +150,21 @@ class RAGEngine:
             },
         )
         matches = getattr(result, "matches", None) or []
+        self._progress(
+            on_progress,
+            "retrieval",
+            "completed",
+            f"{len(matches)} relevant chunks retrieved",
+        )
         return [self._document_from_metadata(self._metadata(match)) for match in matches]
 
-    def retrieve_context(self, query: str, k: int = 4) -> tuple[str, List[str]]:
-        documents = self.similarity_search(query, k=k)
+    def retrieve_context(
+        self,
+        query: str,
+        k: int = 4,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> tuple[str, List[str]]:
+        documents = self.similarity_search(query, k=k, on_progress=on_progress)
         context_parts = []
         sources = []
         for rank, doc in enumerate(documents, start=1):
@@ -272,15 +317,21 @@ class RAGEngine:
         }
         page = chunk.metadata.get("page")
         chunk_index = chunk.metadata.get("chunk_index")
+        char_start = chunk.metadata.get("char_start")
+        char_end = chunk.metadata.get("char_end")
         if isinstance(page, int):
             metadata["page"] = page
         if isinstance(chunk_index, int):
             metadata["chunk_index"] = chunk_index
+        if isinstance(char_start, int):
+            metadata["char_start"] = char_start
+        if isinstance(char_end, int):
+            metadata["char_end"] = char_end
         return metadata
 
     def _document_from_metadata(self, metadata: dict) -> Document:
         document_metadata = {"source": metadata.get("source", "Uploaded document")}
-        for key in ("page", "chunk_index"):
+        for key in ("page", "chunk_index", "char_start", "char_end"):
             value = metadata.get(key)
             if isinstance(value, (int, float)):
                 document_metadata[key] = int(value)
@@ -313,6 +364,54 @@ class RAGEngine:
 
     def _chunk_id(self, document_id: str, position: int) -> str:
         return f"{document_id}:chunk:{position:06d}"
+
+    def _ingestion_visualization(
+        self,
+        chunks: List[Document],
+        vectors: List[List[float]],
+        document_name: str,
+    ) -> dict:
+        recorded_ends = [int(chunk.metadata.get("char_end", 0)) for chunk in chunks]
+        character_count = max(recorded_ends, default=0)
+        if character_count == 0:
+            character_count = sum(len(chunk.page_content) for chunk in chunks)
+        previews = []
+        previous_end = 0
+        for position, (chunk, vector) in enumerate(zip(chunks[:3], vectors[:3])):
+            start = int(chunk.metadata.get("char_start", 0))
+            end = int(chunk.metadata.get("char_end", start + len(chunk.page_content)))
+            previews.append(
+                {
+                    "index": position + 1,
+                    "start": start,
+                    "end": end,
+                    "characters": len(chunk.page_content),
+                    "overlap_with_previous": max(0, previous_end - start),
+                    "embedding_preview": [round(float(value), 3) for value in vector[:3]],
+                }
+            )
+            previous_end = end
+
+        return {
+            "document_name": document_name,
+            "character_count": character_count,
+            "estimated_tokens": round(character_count / 4),
+            "total_chunks": len(chunks),
+            "embedding_dimension": EMBEDDING_DIMENSION,
+            "index_name": self.index_name,
+            "namespace": self.namespace,
+            "chunks": previews,
+        }
+
+    def _progress(
+        self,
+        callback: Optional[ProgressCallback],
+        step_id: str,
+        state: str,
+        detail: Optional[str],
+    ) -> None:
+        if callback is not None:
+            callback(step_id, state, detail)
 
     def _metadata(self, record: Any) -> dict:
         if isinstance(record, dict):

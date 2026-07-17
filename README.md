@@ -58,6 +58,10 @@ Answer, sources, token usage, cache status, and estimated cost
 - Protect API operations with HTTP Basic Auth.
 - Automatically sign out after three minutes of frontend inactivity.
 - Restore document state from Pinecone after backend restarts or deployments.
+- Visualize upload and question processing with live backend stages, durations,
+  vector dimensions, retrieval counts, cache behavior, and citations.
+- Inspect the latest ingestion as a document-to-chunks-to-embeddings-to-Pinecone
+  flow diagram backed by real chunk ranges and vector samples.
 - Provide an unauthenticated `/health` endpoint for platform health checks.
 
 ## Project Evolution
@@ -202,6 +206,7 @@ backend `.env`.
 | `GET` | `/status` | Basic Auth | Return active document state |
 | `POST` | `/upload` | Basic Auth | Validate, process, embed, and index a document |
 | `POST` | `/chat` | Basic Auth | Retrieve context and ask Claude |
+| `GET` | `/operations/{id}` | Basic Auth | Read live upload or chat pipeline progress |
 | `DELETE` | `/clear` | Basic Auth | Delete records in the configured namespace |
 
 During local development, Vite proxies `/api/*` to
