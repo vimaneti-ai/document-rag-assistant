@@ -2,7 +2,9 @@
 
 Base URL during local development: `http://localhost:8000`
 
-All endpoints require HTTP Basic authentication. Use the credentials configured in backend environment variables:
+All application endpoints except `GET /health` require HTTP Basic
+authentication. Use the credentials configured in backend environment
+variables:
 
 ```env
 APP_BASIC_AUTH_USERNAME=admin
@@ -13,6 +15,20 @@ Example:
 
 ```bash
 curl -u admin:use-a-long-random-password http://localhost:8000/status
+```
+
+## `GET /health`
+
+Returns a lightweight process health check without contacting Anthropic or
+Pinecone. This endpoint does not require authentication and is suitable for a
+load balancer or hosting-platform health check.
+
+Response:
+
+```json
+{
+  "status": "ok"
+}
 ```
 
 ## `GET /status`
@@ -121,7 +137,8 @@ Response:
 
 ## `DELETE /clear`
 
-Deletes the local FAISS index and resets backend document state.
+Deletes all vectors in the configured Pinecone namespace and resets backend
+document state. It does not delete the Pinecone index itself.
 
 Response:
 

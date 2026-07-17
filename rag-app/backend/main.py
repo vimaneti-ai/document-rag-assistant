@@ -2,14 +2,18 @@ import os
 import secrets
 from typing import List
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
 from claude_client import ClaudeClient
 from document_processor import SUPPORTED_EXTENSIONS, load_document, split_documents
 from rag_engine import RAGEngine
+
+load_dotenv()
 
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "25"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -39,7 +43,7 @@ def require_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     expected_password = os.getenv("APP_BASIC_AUTH_PASSWORD", "")
     if not expected_username or not expected_password:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Basic authentication is not configured.",
         )
 
@@ -47,7 +51,7 @@ def require_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     valid_password = secrets.compare_digest(credentials.password, expected_password)
     if not (valid_username and valid_password):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
             headers={"WWW-Authenticate": "Basic"},
         )
@@ -111,7 +115,7 @@ async def chat(request: ChatRequest, _: str = Depends(require_auth)):
             document_context=rag_engine.full_document_context(),
             document_name=rag_engine.document_name or "uploaded-document",
             retrieved_context=retrieved_context,
-            conversation_history=[message.dict() for message in request.conversation_history],
+            conversation_history=[message.model_dump() for message in request.conversation_history],
         )
         return {"answer": answer, "sources": sources, "usage": usage.to_dict()}
     except RuntimeError as exc:
@@ -122,13 +126,21 @@ async def chat(request: ChatRequest, _: str = Depends(require_auth)):
 
 @app.get("/status")
 async def status(_: str = Depends(require_auth)):
-    return rag_engine.status()
+    try:
+        return rag_engine.status()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.delete("/clear")
 async def clear(_: str = Depends(require_auth)):
-    rag_engine.clear()
-    return {"success": True}
+    try:
+        rag_engine.clear()
+        return {"success": True}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

@@ -17,6 +17,11 @@ Set environment variables:
 
 ```env
 ANTHROPIC_API_KEY=your_key_here
+PINECONE_API_KEY=your_pinecone_key_here
+PINECONE_INDEX_NAME=document-rag-assistant
+PINECONE_NAMESPACE=adaptive-rag
+PINECONE_CLOUD=aws
+PINECONE_REGION=us-east-1
 APP_BASIC_AUTH_USERNAME=admin
 APP_BASIC_AUTH_PASSWORD=use-a-long-random-password
 CORS_ORIGINS=https://your-frontend-domain.com
@@ -30,11 +35,14 @@ Run with a production ASGI server:
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-For a managed deployment, put this behind the platform's process manager or a reverse proxy. Persist `backend/faiss_index/` if you want uploaded indexes to survive restarts.
+For a managed deployment, put this behind the platform's process manager or a reverse proxy. Pinecone persists vectors independently of the backend instance, so no vector-data volume is required.
 
 Use HTTPS in front of the backend. HTTP Basic credentials must not be sent over plain HTTP on a public network.
 
-For a public demo, local FAISS storage is acceptable if losing uploaded indexes on restart is fine. For real production, use S3 for uploaded files, PostgreSQL for metadata and chat history, and EFS, pgvector, or Qdrant for vector storage.
+The app currently keeps one active document in `PINECONE_NAMESPACE`. Use a separate namespace per user, tenant, or document collection before supporting multiple users. Add S3 for original files and PostgreSQL for users, metadata, and chat history when those records must persist.
+
+For Elastic Beanstalk, add every backend variable above under Environment
+properties. Keep `PIP_NO_CACHE_DIR=true` to reduce installation disk usage.
 
 ## Frontend
 
@@ -42,6 +50,7 @@ Set the API base URL:
 
 ```env
 VITE_API_BASE_URL=https://your-api-domain.com
+VITE_INACTIVITY_TIMEOUT_MS=180000
 ```
 
 Build:
@@ -55,6 +64,8 @@ npm run build
 Deploy `frontend/dist/` to any static host.
 
 Users will be prompted to sign in with the backend Basic Auth username and password.
+After three minutes of inactivity, the frontend removes the stored credentials
+and returns the user to the sign-in screen.
 
 ## Local Proxy
 

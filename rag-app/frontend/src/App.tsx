@@ -11,6 +11,15 @@ const emptyStatus: StatusResponse = {
 }
 
 const storedAuthKey = 'adaptive-rag-basic-auth'
+const storedActivityKey = 'adaptive-rag-last-activity'
+const inactivityTimeoutMs = readInactivityTimeout()
+const activityEvents: Array<keyof WindowEventMap> = [
+  'keydown',
+  'pointerdown',
+  'pointermove',
+  'scroll',
+  'touchstart',
+]
 
 export default function App() {
   const [credentials, setCredentials] = useState<AuthCredentials | null>(() => readStoredAuth())
@@ -30,6 +39,58 @@ export default function App() {
     }
   }, [credentials])
 
+  useEffect(() => {
+    if (!credentials) return
+
+    let timerId: number | undefined
+    let lastRecordedAt = readLastActivity() || Date.now()
+
+    function scheduleTimeout() {
+      window.clearTimeout(timerId)
+      const elapsed = Date.now() - readLastActivity()
+      timerId = window.setTimeout(checkForExpiration, Math.max(inactivityTimeoutMs - elapsed, 0))
+    }
+
+    function checkForExpiration() {
+      if (Date.now() - readLastActivity() >= inactivityTimeoutMs) {
+        clearSession(`You were signed out after ${formatTimeout(inactivityTimeoutMs)} of inactivity.`)
+        return
+      }
+      scheduleTimeout()
+    }
+
+    function recordActivity() {
+      const now = Date.now()
+      if (now - lastRecordedAt < 1000) return
+      lastRecordedAt = now
+      sessionStorage.setItem(storedActivityKey, now.toString())
+      scheduleTimeout()
+    }
+
+    function checkVisibleTab() {
+      if (document.visibilityState === 'visible') {
+        checkForExpiration()
+      }
+    }
+
+    if (!readLastActivity()) {
+      sessionStorage.setItem(storedActivityKey, lastRecordedAt.toString())
+    }
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, recordActivity, { passive: true })
+    })
+    document.addEventListener('visibilitychange', checkVisibleTab)
+    checkForExpiration()
+
+    return () => {
+      window.clearTimeout(timerId)
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, recordActivity)
+      })
+      document.removeEventListener('visibilitychange', checkVisibleTab)
+    }
+  }, [credentials])
+
   const questionsAsked = useMemo(
     () => messages.filter((message) => message.role === 'user').length,
     [messages],
@@ -45,6 +106,7 @@ export default function App() {
     try {
       const nextStatus = await getStatus(nextCredentials)
       sessionStorage.setItem(storedAuthKey, JSON.stringify(nextCredentials))
+      sessionStorage.setItem(storedActivityKey, Date.now().toString())
       setCredentials(nextCredentials)
       setStatus(nextStatus)
     } catch (err) {
@@ -53,7 +115,12 @@ export default function App() {
   }
 
   function handleLogout() {
+    clearSession(null)
+  }
+
+  function clearSession(message: string | null) {
     sessionStorage.removeItem(storedAuthKey)
+    sessionStorage.removeItem(storedActivityKey)
     setCredentials(null)
     setStatus(emptyStatus)
     setMessages([])
@@ -61,7 +128,7 @@ export default function App() {
     setSessionCost(0)
     setCacheHits(0)
     setLastUsage(undefined)
-    setError(null)
+    setError(message)
   }
 
   async function handleUpload(file: File) {
@@ -290,7 +357,7 @@ function EmptyState() {
         <p className="text-sm font-semibold uppercase tracking-[0.24em] text-accent-400">Ready for retrieval</p>
         <h2 className="mt-4 text-4xl font-semibold tracking-normal text-white sm:text-5xl">Upload a document to start a grounded chat.</h2>
         <div className="mt-8 grid gap-3 text-left sm:grid-cols-3">
-          <Feature title="Local vectors" body="FAISS and MiniLM embeddings run on your Mac." />
+          <Feature title="Managed vectors" body="Pinecone stores MiniLM embeddings for durable retrieval." />
           <Feature title="Cached context" body="Claude prompt caching lowers repeated input cost." />
           <Feature title="Traceable answers" body="Every response can expose the retrieved source chunks." />
         </div>
@@ -319,11 +386,40 @@ function readError(error: unknown) {
 function readStoredAuth(): AuthCredentials | null {
   const raw = sessionStorage.getItem(storedAuthKey)
   if (!raw) return null
+  const lastActivity = readLastActivity()
+  if (lastActivity && Date.now() - lastActivity >= inactivityTimeoutMs) {
+    sessionStorage.removeItem(storedAuthKey)
+    sessionStorage.removeItem(storedActivityKey)
+    return null
+  }
   try {
     const parsed = JSON.parse(raw) as AuthCredentials
-    if (parsed.username && parsed.password) return parsed
+    if (parsed.username && parsed.password) {
+      if (!lastActivity) {
+        sessionStorage.setItem(storedActivityKey, Date.now().toString())
+      }
+      return parsed
+    }
   } catch {
     sessionStorage.removeItem(storedAuthKey)
+    sessionStorage.removeItem(storedActivityKey)
   }
   return null
+}
+
+function readLastActivity() {
+  const timestamp = Number(sessionStorage.getItem(storedActivityKey))
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0
+}
+
+function readInactivityTimeout() {
+  const configured = Number(import.meta.env.VITE_INACTIVITY_TIMEOUT_MS)
+  return Number.isFinite(configured) && configured > 0
+    ? Math.max(configured, 60_000)
+    : 180_000
+}
+
+function formatTimeout(timeoutMs: number) {
+  const minutes = Math.round(timeoutMs / 60_000)
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`
 }

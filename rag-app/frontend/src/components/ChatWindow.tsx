@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Message, UsageStats } from '../types'
+import { getCacheLabel, getCacheStatus } from '../utils/cache'
 
 interface ChatWindowProps {
   messages: Message[]
@@ -48,10 +49,12 @@ function MessageBubble({ message }: { message: Message }) {
 }
 
 function Usage({ usage }: { usage: UsageStats }) {
+  const cacheStatus = getCacheStatus(usage)
+
   return (
     <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-3 text-[11px] text-slate-400">
-      <span className={usage.cache_hit ? 'usage-good' : 'usage-warn'}>
-        {usage.cache_hit ? 'Cache hit' : 'Cache write'}
+      <span className={cacheStatus === 'hit' ? 'usage-good' : 'usage-warn'}>
+        {getCacheLabel(cacheStatus)}
       </span>
       <span>{usage.input_tokens} input</span>
       <span>{usage.output_tokens} output</span>

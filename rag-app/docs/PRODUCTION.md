@@ -3,6 +3,7 @@
 ## Secrets
 
 - Keep `ANTHROPIC_API_KEY` in environment variables or a secret manager.
+- Keep `PINECONE_API_KEY` in environment variables or a secret manager.
 - Keep `APP_BASIC_AUTH_PASSWORD` in environment variables or a secret manager.
 - Do not commit `.env` files.
 - `.env.example` files are safe templates and should not contain real keys.
@@ -22,6 +23,16 @@ Use a long random password and serve the app only over HTTPS when public.
 
 For team or customer-facing production use, replace Basic Auth with a proper identity provider such as Cognito, Auth0, or your organization's SSO.
 
+The frontend inactivity timeout is configured at build time:
+
+```env
+VITE_INACTIVITY_TIMEOUT_MS=180000
+```
+
+This clears credentials stored in the browser session after three inactive
+minutes. It is a frontend safeguard, not a replacement for server-issued,
+expiring sessions in a multi-user production system.
+
 ## CORS
 
 Use explicit frontend origins in `CORS_ORIGINS`. Avoid `*` for production.
@@ -32,28 +43,29 @@ Example:
 CORS_ORIGINS=https://rag.example.com
 ```
 
-## FAISS Persistence
+## Pinecone Persistence
 
-For demos, the app stores local index state in:
+Vectors, chunk text, source metadata, and the active-document state are stored
+in the configured Pinecone namespace:
 
-```text
-rag-app/backend/faiss_index/
+```env
+PINECONE_INDEX_NAME=document-rag-assistant
+PINECONE_NAMESPACE=adaptive-rag
 ```
 
-This directory is ignored by git. Persist it with a volume if deployed to a platform with ephemeral disks.
+The backend creates a serverless index on first upload when it does not exist.
+The index must use 384 dimensions and cosine similarity because the app embeds
+text locally with `all-MiniLM-L6-v2`.
 
 For real production, prefer:
 
 - S3 for uploaded source files.
 - PostgreSQL for metadata, users, sessions, and chat history.
-- EFS for local FAISS persistence, or pgvector/Qdrant for vector storage.
-- Per-user or per-tenant isolation for documents and indexes.
+- A separate Pinecone namespace per user, tenant, or collection.
+- Server-side authorization that prevents users from selecting another tenant's namespace.
 
-Local FAISS is fine for a single-user demo, but it is not enough for a public multi-user app by itself.
-
-## Deserialization Safety
-
-LangChain FAISS persistence uses pickle-backed metadata. Only load indexes created by this app in a trusted environment. Do not accept arbitrary FAISS index folders from users.
+The current fixed namespace and Basic Auth model are suitable for one trusted
+user or a controlled demo. They are not a multi-tenant authorization design.
 
 ## Document Size
 
@@ -71,7 +83,8 @@ MAX_UPLOAD_MB=25
 
 `MAX_CACHED_CONTEXT_CHARS` bounds the document context included in Claude's cached system prompt. Retrieved chunks are always sent with the user question, so answers still prioritize the most relevant excerpts.
 
-For very large document collections, move from one local FAISS index to a managed vector database and add per-user/session isolation.
+For large document collections, add document IDs, pagination, background
+ingestion, and per-user or per-tenant namespaces.
 
 ## Operational Checks
 

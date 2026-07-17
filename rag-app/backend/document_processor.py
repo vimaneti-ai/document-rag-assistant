@@ -3,7 +3,6 @@ import tempfile
 from pathlib import Path
 from typing import List
 
-import pandas as pd
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -68,9 +67,8 @@ def _load_by_extension(path: str, extension: str, original_name: str) -> List[Do
         return [_document("\n".join(parts), original_name)]
 
     if extension == ".csv":
-        dataframe = pd.read_csv(path)
-        csv_preview = dataframe.to_csv(index=False)
-        return [_document(csv_preview, original_name)]
+        content = Path(path).read_text(encoding="utf-8", errors="ignore")
+        return [_document(content, original_name)]
 
     raise ValueError(f"Unsupported file type: {extension}")
 

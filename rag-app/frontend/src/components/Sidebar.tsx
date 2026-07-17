@@ -32,7 +32,7 @@ export function Sidebar({
           </div>
           <div>
             <h1 className="text-base font-semibold text-white">Adaptive RAG</h1>
-            <p className="text-xs text-slate-500">Claude + FAISS</p>
+            <p className="text-xs text-slate-500">Claude + Pinecone</p>
           </div>
         </div>
       </div>
@@ -63,7 +63,7 @@ export function Sidebar({
       />
 
       <button className="mt-auto clear-button" onClick={() => void onClear()}>
-        Clear index
+        Clear document
       </button>
     </aside>
   )
