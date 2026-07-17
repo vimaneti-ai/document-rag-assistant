@@ -228,6 +228,10 @@ npm run build
 
 ## Production Notes
 
+- Current S3 frontend:
+  `http://rag-assistant-vinod.s3-website.us-east-2.amazonaws.com`
+- Current backend API:
+  `https://d27o32245p2wf.cloudfront.net`
 - Store API keys and passwords in AWS Secrets Manager, SSM Parameter Store, or
   protected environment variables.
 - Rotate any credential exposed in chat, screenshots, logs, or documentation.

@@ -24,7 +24,7 @@ PINECONE_CLOUD=aws
 PINECONE_REGION=us-east-1
 APP_BASIC_AUTH_USERNAME=admin
 APP_BASIC_AUTH_PASSWORD=use-a-long-random-password
-CORS_ORIGINS=https://your-frontend-domain.com
+CORS_ORIGINS=http://rag-assistant-vinod.s3-website.us-east-2.amazonaws.com
 MAX_UPLOAD_MB=25
 MAX_CACHED_CONTEXT_CHARS=120000
 ```
@@ -49,7 +49,7 @@ properties. Keep `PIP_NO_CACHE_DIR=true` to reduce installation disk usage.
 Set the API base URL:
 
 ```env
-VITE_API_BASE_URL=https://your-api-domain.com
+VITE_API_BASE_URL=https://d27o32245p2wf.cloudfront.net
 VITE_INACTIVITY_TIMEOUT_MS=180000
 ```
 
@@ -61,7 +61,17 @@ npm install
 npm run build
 ```
 
-Deploy `frontend/dist/` to any static host.
+Deploy the current build to the S3 website bucket:
+
+```bash
+aws s3 sync dist/ s3://rag-assistant-vinod --delete
+```
+
+Current frontend URL:
+
+```text
+http://rag-assistant-vinod.s3-website.us-east-2.amazonaws.com
+```
 
 Users will be prompted to sign in with the backend Basic Auth username and password.
 After three minutes of inactivity, the frontend removes the stored credentials
@@ -70,3 +80,7 @@ and returns the user to the sign-in screen.
 ## Local Proxy
 
 During development, Vite proxies `/api/*` to `http://localhost:8000`. In production, use `VITE_API_BASE_URL` or a reverse proxy that routes `/api` to the backend.
+
+The S3 website endpoint supports HTTP only. Put CloudFront and an ACM
+certificate in front of the frontend before treating the deployment as
+production, then replace `CORS_ORIGINS` with the final HTTPS frontend origin.
