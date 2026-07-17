@@ -257,5 +257,6 @@ npm run build
 - [API Reference](./rag-app/docs/API.md)
 - [Deployment](./rag-app/docs/DEPLOYMENT.md)
 - [GitHub Actions Deployment](./rag-app/docs/GITHUB_ACTIONS.md)
+- [CI/CD End-to-End Process](./rag-app/docs/CI_CD_PROCESS.md)
 - [Production Notes](./rag-app/docs/PRODUCTION.md)
 - [Complete Project Overview](./rag-app/docs/PROJECT_OVERVIEW.md)
