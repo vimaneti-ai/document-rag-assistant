@@ -47,8 +47,8 @@ class FakeIndex:
         records = self.records.get(namespace, {}).values()
         document_id = filter["$and"][1]["document_id"]["$eq"]
         matches = [
-            record
-            for record in records
+            SimpleNamespace(metadata=record.metadata, score=0.82 - (position * 0.05))
+            for position, record in enumerate(records)
             if record.metadata.get("record_type") == "chunk"
             and record.metadata.get("document_id") == document_id
         ]
@@ -96,6 +96,12 @@ class RAGEngineTests(unittest.TestCase):
         context, sources = self.engine.retrieve_context("What was the margin?", k=1)
         self.assertIn("Revenue increased", context)
         self.assertEqual(sources, ["report.pdf - page 2 - chunk 1"])
+
+        _, _, trace = self.engine.retrieve_context_with_trace("What was the margin?", k=2)
+        self.assertEqual(trace["query_embedding_preview"], [1.0, 0.0, 0.0])
+        self.assertEqual(trace["embedding_dimension"], EMBEDDING_DIMENSION)
+        self.assertEqual(trace["matches"][0]["score"], 0.82)
+        self.assertIn("Revenue increased", trace["matches"][0]["excerpt"])
 
         restarted = RAGEngine()
         restarted.embeddings = FakeEmbeddings()

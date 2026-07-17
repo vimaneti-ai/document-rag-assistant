@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { Message, UsageStats } from '../types'
 import { getCacheLabel, getCacheStatus } from '../utils/cache'
-import { PipelineTrace } from './PipelineVisualizer'
+import { PipelineTrace, QuestionFlow } from './PipelineVisualizer'
 
 interface ChatWindowProps {
   messages: Message[]
@@ -13,7 +13,14 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
     <div className="flex-1 overflow-y-auto px-5 py-5 lg:px-8">
       <div className="mx-auto flex max-w-4xl flex-col gap-4">
         {messages.map((message, index) => (
-          <MessageBubble key={`${message.role}-${index}`} message={message} />
+          <Fragment key={`${message.role}-${index}`}>
+            <MessageBubble message={message} />
+            {message.role === 'assistant' && message.questionVisualization && (
+              <div className="message-question-flow">
+                <QuestionFlow visualization={message.questionVisualization} />
+              </div>
+            )}
+          </Fragment>
         ))}
         {isLoading && (
           <div className="assistant-card w-fit">

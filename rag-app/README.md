@@ -13,6 +13,10 @@ prompt caching, Claude generation, and citations.
 After an upload, the pipeline renders a branching document map with real chunk
 ranges, overlap bands, embedding samples, and the Pinecone destination.
 
+After each answer, the UI renders the real query vector preview, ranked
+Pinecone scores and excerpts, prompt inputs, cache behavior, model token usage,
+and final citation count directly beneath that answer.
+
 Start here:
 
 - [Setup](./docs/SETUP.md)

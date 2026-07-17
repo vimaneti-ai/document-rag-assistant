@@ -5,6 +5,7 @@ import type {
   PipelineOperation,
   PipelineStatus,
   PipelineStep,
+  QuestionVisualization,
 } from '../types'
 
 const blueprints: Record<PipelineKind, Array<Pick<PipelineStep, 'id' | 'label'>>> = {
@@ -128,6 +129,111 @@ export function PipelineVisualizer({
         <IngestionFlow visualization={ingestionVisualization} />
       )}
     </section>
+  )
+}
+
+export function QuestionFlow({
+  visualization,
+}: {
+  visualization: QuestionVisualization
+}) {
+  return (
+    <div className="question-flow">
+      <div className="ingestion-flow-header">
+        <div>
+          <div className="section-label">Question transformation</div>
+          <p>Actual query vector, Pinecone matches, prompt context, and Claude usage</p>
+        </div>
+        <span>{visualization.matches.length} retrieved matches</span>
+      </div>
+
+      <div className="question-flow-canvas">
+        <div className="question-node">
+          <small>Question</small>
+          <strong>{visualization.question}</strong>
+        </div>
+        <div className="flow-arrow-down" aria-hidden="true" />
+        <div className="query-vector-node">
+          <small>Query embedding</small>
+          <strong>
+            [{visualization.query_embedding_preview.map(formatVectorValue).join(', ')}, ...]
+          </strong>
+          <span>{visualization.embedding_dimension} dimensions</span>
+        </div>
+        <div className="flow-arrow-down" aria-hidden="true" />
+
+        <div className="retrieval-label">
+          <strong>Pinecone semantic search</strong>
+          <span>Ranked by cosine similarity</span>
+        </div>
+        <div className="retrieval-grid">
+          {visualization.matches.map((match) => (
+            <article className="retrieval-match" key={`${match.rank}-${match.source}`}>
+              <div className="retrieval-match-heading">
+                <span>#{match.rank}</span>
+                <strong>{formatScore(match.score)}</strong>
+              </div>
+              <div className="similarity-track">
+                <span style={{ width: `${scorePercentage(match.score)}%` }} />
+              </div>
+              <p>{match.excerpt}</p>
+              <small>{match.source}</small>
+            </article>
+          ))}
+        </div>
+
+        <div className="flow-arrow-down" aria-hidden="true" />
+        <div className="prompt-node">
+          <div>
+            <small>Retrieved context</small>
+            <strong>{visualization.retrieved_context_characters.toLocaleString()} chars</strong>
+          </div>
+          <span>+</span>
+          <div>
+            <small>Cached document</small>
+            <strong>{visualization.document_context_characters.toLocaleString()} chars</strong>
+          </div>
+          <span>+</span>
+          <div>
+            <small>Conversation</small>
+            <strong>{visualization.history_messages} messages</strong>
+          </div>
+        </div>
+        <div className="flow-arrow-down" aria-hidden="true" />
+
+        <div className="generation-row">
+          <div className="claude-node">
+            <small>Generation model</small>
+            <strong>{visualization.model}</strong>
+            <span>
+              {visualization.input_tokens.toLocaleString()} input
+              {' / '}
+              {visualization.output_tokens.toLocaleString()} output
+            </span>
+          </div>
+          <div className={`cache-node cache-node-${visualization.cache_status}`}>
+            <small>Prompt cache</small>
+            <strong>{cacheStatusLabel(visualization.cache_status)}</strong>
+            <span>
+              {visualization.cache_status === 'hit'
+                ? `${visualization.cache_read_tokens.toLocaleString()} tokens reused`
+                : visualization.cache_status === 'write'
+                  ? `${visualization.cache_write_tokens.toLocaleString()} tokens written`
+                  : 'No cache tokens reported'}
+            </span>
+          </div>
+        </div>
+        <div className="flow-arrow-down" aria-hidden="true" />
+        <div className="answer-node">
+          <strong>Grounded answer</strong>
+          <span>
+            {visualization.answer_characters.toLocaleString()} characters
+            {' / '}
+            {visualization.source_count} source citations
+          </span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -283,4 +389,18 @@ function formatDuration(milliseconds: number) {
 
 function formatVectorValue(value: number) {
   return value.toFixed(2)
+}
+
+function formatScore(score: number) {
+  return score.toFixed(3)
+}
+
+function scorePercentage(score: number) {
+  return Math.max(3, Math.min(100, score * 100))
+}
+
+function cacheStatusLabel(status: QuestionVisualization['cache_status']) {
+  if (status === 'hit') return 'Cache hit'
+  if (status === 'write') return 'Cache written'
+  return 'No cache event'
 }

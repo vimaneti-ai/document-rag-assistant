@@ -62,6 +62,8 @@ Answer, sources, token usage, cache status, and estimated cost
   vector dimensions, retrieval counts, cache behavior, and citations.
 - Inspect the latest ingestion as a document-to-chunks-to-embeddings-to-Pinecone
   flow diagram backed by real chunk ranges and vector samples.
+- Follow each question through its query embedding, ranked Pinecone matches,
+  prompt composition, Claude cache behavior, and grounded answer citations.
 - Provide an unauthenticated `/health` endpoint for platform health checks.
 
 ## Project Evolution

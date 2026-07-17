@@ -13,6 +13,7 @@ export interface Message {
   usage?: UsageStats
   sources?: string[]
   pipeline?: PipelineOperation
+  questionVisualization?: QuestionVisualization
 }
 
 export interface UploadResponse {
@@ -28,6 +29,7 @@ export interface ChatResponse {
   sources: string[]
   usage: UsageStats
   pipeline: PipelineOperation
+  visualization: QuestionVisualization
 }
 
 export interface StatusResponse {
@@ -75,4 +77,30 @@ export interface IngestionVisualization {
   index_name: string
   namespace: string
   chunks: IngestionChunk[]
+}
+
+export interface RetrievalMatch {
+  rank: number
+  source: string
+  score: number
+  characters: number
+  excerpt: string
+}
+
+export interface QuestionVisualization {
+  question: string
+  query_embedding_preview: number[]
+  embedding_dimension: number
+  matches: RetrievalMatch[]
+  retrieved_context_characters: number
+  document_context_characters: number
+  history_messages: number
+  model: string
+  answer_characters: number
+  source_count: number
+  cache_status: 'hit' | 'write' | 'none'
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
 }

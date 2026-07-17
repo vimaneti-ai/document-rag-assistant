@@ -158,8 +158,8 @@ async def chat(request: ChatRequest, _: str = Depends(require_auth)):
     current_operation_id = _operation_id(request.operation_id)
     operations.start(current_operation_id, "chat")
     try:
-        retrieved_context, sources = await run_in_threadpool(
-            rag_engine.retrieve_context,
+        retrieved_context, sources, visualization = await run_in_threadpool(
+            rag_engine.retrieve_context_with_trace,
             request.question,
             4,
             _progress_callback(current_operation_id),
@@ -199,11 +199,34 @@ async def chat(request: ChatRequest, _: str = Depends(require_auth)):
             f"{len(sources)} source citation{'s' if len(sources) != 1 else ''} attached",
         )
         pipeline = operations.complete(current_operation_id)
+        visualization.update(
+            {
+                "question": request.question,
+                "retrieved_context_characters": len(retrieved_context),
+                "document_context_characters": len(document_context),
+                "history_messages": len(history),
+                "model": "claude-haiku-4-5",
+                "answer_characters": len(answer),
+                "source_count": len(sources),
+                "cache_status": (
+                    "hit"
+                    if usage.cache_hit
+                    else "write"
+                    if usage.cache_write_tokens
+                    else "none"
+                ),
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cache_read_tokens": usage.cache_read_tokens,
+                "cache_write_tokens": usage.cache_write_tokens,
+            }
+        )
         return {
             "answer": answer,
             "sources": sources,
             "usage": usage.to_dict(),
             "pipeline": pipeline,
+            "visualization": visualization,
         }
     except RuntimeError as exc:
         operations.fail(current_operation_id, str(exc))

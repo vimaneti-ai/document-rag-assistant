@@ -121,6 +121,10 @@ and returns to the sign-in screen.
 7. Frontend displays the answer, source citations, cost, and cache hit/miss.
 8. The execution trace shows query embedding, retrieval, prompt assembly,
    Claude generation, prompt-cache behavior, and citation attachment.
+9. A question-flow diagram shows the real query vector sample, ranked Pinecone
+   similarity scores, retrieved excerpts, prompt composition, Claude/cache
+   usage, and grounded answer output. The diagram is attached directly below
+   its assistant answer so each conversation turn keeps its own trace.
 ```
 
 ## Environment Variables

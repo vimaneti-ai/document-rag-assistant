@@ -235,6 +235,7 @@ export default function App() {
         usage: response.usage,
         sources: response.sources,
         pipeline: response.pipeline,
+        questionVisualization: response.visualization,
       }
       setMessages([...nextMessages, assistantMessage])
       setSessionCost((cost) => cost + response.usage.cost_usd)

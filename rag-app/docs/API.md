@@ -174,9 +174,39 @@ Response:
     "status": "completed",
     "elapsed_ms": 1530,
     "steps": []
+  },
+  "visualization": {
+    "question": "What are the main findings?",
+    "query_embedding_preview": [0.14, -0.23, 0.08],
+    "embedding_dimension": 384,
+    "matches": [
+      {
+        "rank": 1,
+        "source": "example.pdf - page 3 - chunk 8",
+        "score": 0.8241,
+        "characters": 944,
+        "excerpt": "The report identifies..."
+      }
+    ],
+    "retrieved_context_characters": 3820,
+    "document_context_characters": 42180,
+    "history_messages": 2,
+    "model": "claude-haiku-4-5",
+    "answer_characters": 612,
+    "source_count": 4,
+    "cache_status": "hit",
+    "input_tokens": 1200,
+    "output_tokens": 180,
+    "cache_read_tokens": 8000,
+    "cache_write_tokens": 0
   }
 }
 ```
+
+The question visualization contains the real query-vector preview, Pinecone
+match scores and excerpts, prompt composition, cache event, Claude token usage,
+and answer/citation counts. The UI uses these values to render the complete
+question-to-answer flow.
 
 ## `GET /operations/{operation_id}`
 

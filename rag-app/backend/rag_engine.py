@@ -123,6 +123,15 @@ class RAGEngine:
         k: int = 4,
         on_progress: Optional[ProgressCallback] = None,
     ) -> List[Document]:
+        documents, _ = self.similarity_search_with_trace(query, k, on_progress)
+        return documents
+
+    def similarity_search_with_trace(
+        self,
+        query: str,
+        k: int = 4,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> tuple[List[Document], dict]:
         self._ensure_state()
         document_id = self.state.get("document_id")
         if not document_id:
@@ -156,7 +165,27 @@ class RAGEngine:
             "completed",
             f"{len(matches)} relevant chunks retrieved",
         )
-        return [self._document_from_metadata(self._metadata(match)) for match in matches]
+        documents = [self._document_from_metadata(self._metadata(match)) for match in matches]
+        trace = {
+            "query_embedding_preview": [
+                round(float(value), 3) for value in query_vector[:3]
+            ],
+            "embedding_dimension": len(query_vector),
+            "matches": [
+                {
+                    "rank": rank,
+                    "source": self._source_label(document),
+                    "score": round(self._score(match), 4),
+                    "characters": len(document.page_content),
+                    "excerpt": self._excerpt(document.page_content),
+                }
+                for rank, (match, document) in enumerate(
+                    zip(matches, documents),
+                    start=1,
+                )
+            ],
+        }
+        return documents, trace
 
     def retrieve_context(
         self,
@@ -164,7 +193,20 @@ class RAGEngine:
         k: int = 4,
         on_progress: Optional[ProgressCallback] = None,
     ) -> tuple[str, List[str]]:
-        documents = self.similarity_search(query, k=k, on_progress=on_progress)
+        context, sources, _ = self.retrieve_context_with_trace(query, k, on_progress)
+        return context, sources
+
+    def retrieve_context_with_trace(
+        self,
+        query: str,
+        k: int = 4,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> tuple[str, List[str], dict]:
+        documents, trace = self.similarity_search_with_trace(
+            query,
+            k=k,
+            on_progress=on_progress,
+        )
         context_parts = []
         sources = []
         for rank, doc in enumerate(documents, start=1):
@@ -172,7 +214,7 @@ class RAGEngine:
             context_parts.append(f"[Retrieved chunk {rank}: {source}]\n{doc.page_content}")
             if source not in sources:
                 sources.append(source)
-        return "\n\n".join(context_parts), sources
+        return "\n\n".join(context_parts), sources, trace
 
     def full_document_context(self) -> str:
         if self._context_cache:
@@ -417,6 +459,17 @@ class RAGEngine:
         if isinstance(record, dict):
             return dict(record.get("metadata") or {})
         return dict(getattr(record, "metadata", None) or {})
+
+    def _score(self, record: Any) -> float:
+        if isinstance(record, dict):
+            return float(record.get("score", 0.0) or 0.0)
+        return float(getattr(record, "score", 0.0) or 0.0)
+
+    def _excerpt(self, text: str, limit: int = 160) -> str:
+        compact = " ".join(text.split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 3].rstrip() + "..."
 
     def _vectors(self, response: Any) -> dict:
         if isinstance(response, dict):
