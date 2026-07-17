@@ -1,5 +1,7 @@
 # Document RAG Assistant
 
+[![Test and Deploy](https://github.com/vimaneti-ai/document-rag-assistant/actions/workflows/deploy.yml/badge.svg)](https://github.com/vimaneti-ai/document-rag-assistant/actions/workflows/deploy.yml)
+
 Document RAG Assistant is a full-stack Retrieval-Augmented Generation
 application built with a FastAPI backend and a React + TypeScript frontend.
 Users can upload a document, ask grounded questions, inspect retrieved sources,
@@ -254,5 +256,6 @@ npm run build
 - [Setup](./rag-app/docs/SETUP.md)
 - [API Reference](./rag-app/docs/API.md)
 - [Deployment](./rag-app/docs/DEPLOYMENT.md)
+- [GitHub Actions Deployment](./rag-app/docs/GITHUB_ACTIONS.md)
 - [Production Notes](./rag-app/docs/PRODUCTION.md)
 - [Complete Project Overview](./rag-app/docs/PROJECT_OVERVIEW.md)

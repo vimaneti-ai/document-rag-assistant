@@ -22,5 +22,6 @@ Start here:
 - [Setup](./docs/SETUP.md)
 - [API](./docs/API.md)
 - [Deployment](./docs/DEPLOYMENT.md)
+- [GitHub Actions Deployment](./docs/GITHUB_ACTIONS.md)
 - [Production Notes](./docs/PRODUCTION.md)
 - [Project Overview](./docs/PROJECT_OVERVIEW.md)

@@ -2,6 +2,9 @@
 
 Adaptive RAG is split into a backend API and a static frontend.
 
+For automated CI/CD from `main`, see
+[GitHub Actions Deployment](./GITHUB_ACTIONS.md).
+
 ## Backend
 
 Install dependencies:

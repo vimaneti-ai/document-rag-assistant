@@ -1,0 +1,317 @@
+name: Test and Deploy
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rag-app/backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: rag-app/backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Compile backend
+        run: >-
+          python -m py_compile
+          main.py
+          rag_engine.py
+          claude_client.py
+          document_processor.py
+          pipeline_progress.py
+
+      - name: Run backend tests
+        run: PYTHONPATH=. python -m unittest discover -s tests -v
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rag-app/frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: rag-app/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+  deploy-backend:
+    name: Deploy backend to EC2
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs:
+      - backend-tests
+      - frontend-build
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Validate deployment configuration
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          EC2_APP_DIR: ${{ vars.EC2_APP_DIR }}
+          EC2_DEPLOY_USER: ${{ vars.EC2_DEPLOY_USER }}
+          PM2_APP_NAME: ${{ vars.PM2_APP_NAME }}
+        run: |
+          set -euo pipefail
+          for name in \
+            AWS_ROLE_ARN \
+            AWS_REGION \
+            EC2_INSTANCE_ID \
+            EC2_APP_DIR \
+            EC2_DEPLOY_USER \
+            PM2_APP_NAME
+          do
+            test -n "${!name:-}" || {
+              echo "::error::Missing GitHub production environment variable: ${name}"
+              exit 1
+            }
+          done
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.2
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: document-rag-github-deploy
+
+      - name: Deploy exact commit with Systems Manager
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          EC2_APP_DIR: ${{ vars.EC2_APP_DIR }}
+          EC2_DEPLOY_USER: ${{ vars.EC2_DEPLOY_USER }}
+          PM2_APP_NAME: ${{ vars.PM2_APP_NAME }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          python <<'PY' > /tmp/ssm-parameters.json
+          import json
+          import os
+          import shlex
+
+          app_dir = os.environ["EC2_APP_DIR"]
+          deploy_user = os.environ["EC2_DEPLOY_USER"]
+          deploy_sha = os.environ["DEPLOY_SHA"]
+          pm2_name = os.environ["PM2_APP_NAME"]
+
+          q = shlex.quote
+          deploy_script = f"{app_dir}/.github/scripts/deploy-backend.sh"
+          temporary_script = "/tmp/document-rag-deploy-backend.sh"
+          rollback_patch = "/tmp/document-rag-rollback.patch"
+          commands = [
+              "set -euo pipefail",
+              f"test -d {q(app_dir + '/.git')}",
+              f"PREVIOUS_SHA=$(sudo -u {q(deploy_user)} -H git -C {q(app_dir)} rev-parse HEAD)",
+              (
+                  f"sudo -u {q(deploy_user)} -H git -C {q(app_dir)} "
+                  f"diff --binary > {q(rollback_patch)}"
+              ),
+              f"sudo -u {q(deploy_user)} -H git -C {q(app_dir)} fetch --prune origin",
+              f"sudo -u {q(deploy_user)} -H git -C {q(app_dir)} checkout --force {q(deploy_sha)}",
+              f"cp {q(deploy_script)} {q(temporary_script)}",
+              f"chmod 755 {q(temporary_script)}",
+              (
+                  f"if ! sudo -u {q(deploy_user)} -H {q(temporary_script)} "
+                  f"{q(app_dir)} {q(pm2_name)}; then "
+                  'echo "Deployment failed; restoring previous commit"; '
+                  f"sudo -u {q(deploy_user)} -H git -C {q(app_dir)} checkout --force \"$PREVIOUS_SHA\"; "
+                  f"if test -s {q(rollback_patch)}; then "
+                  f"sudo -u {q(deploy_user)} -H git -C {q(app_dir)} apply {q(rollback_patch)}; fi; "
+                  f"sudo -u {q(deploy_user)} -H {q(temporary_script)} {q(app_dir)} {q(pm2_name)}; "
+                  "exit 1; fi"
+              ),
+              f"rm -f {q(temporary_script)} {q(rollback_patch)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+
+          COMMAND_ID="$(
+            aws ssm send-command \
+              --region "$AWS_REGION" \
+              --instance-ids "$EC2_INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Deploy document-rag-assistant ${DEPLOY_SHA}" \
+              --parameters file:///tmp/ssm-parameters.json \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+
+          echo "SSM command: $COMMAND_ID"
+          DEADLINE=$((SECONDS + 1800))
+          while (( SECONDS < DEADLINE )); do
+            STATUS="$(
+              aws ssm get-command-invocation \
+                --region "$AWS_REGION" \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$EC2_INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+
+            case "$STATUS" in
+              Success)
+                break
+                ;;
+              Failed|Cancelled|Cancelling|TimedOut)
+                aws ssm get-command-invocation \
+                  --region "$AWS_REGION" \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$EC2_INSTANCE_ID" \
+                  --output json
+                exit 1
+                ;;
+              Pending|InProgress|Delayed|"")
+                sleep 10
+                ;;
+              *)
+                echo "::warning::Unexpected SSM command status: $STATUS"
+                sleep 10
+                ;;
+            esac
+          done
+
+          if [[ "${STATUS:-}" != "Success" ]]; then
+            echo "::error::SSM deployment did not finish within 30 minutes."
+            aws ssm get-command-invocation \
+              --region "$AWS_REGION" \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$EC2_INSTANCE_ID" \
+              --output json || true
+            exit 1
+          fi
+
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --query '{Status:Status,Output:StandardOutputContent}' \
+            --output json
+
+  deploy-frontend:
+    name: Deploy frontend to S3
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs:
+      - backend-tests
+      - frontend-build
+      - deploy-backend
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: rag-app/frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate deployment configuration
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          FRONTEND_S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          for name in AWS_ROLE_ARN AWS_REGION FRONTEND_S3_BUCKET VITE_API_BASE_URL
+          do
+            test -n "${!name:-}" || {
+              echo "::error::Missing GitHub production environment variable: ${name}"
+              exit 1
+            }
+          done
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: rag-app/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build production frontend
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_INACTIVITY_TIMEOUT_MS: ${{ vars.VITE_INACTIVITY_TIMEOUT_MS }}
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.2
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: document-rag-github-deploy
+
+      - name: Publish static assets
+        env:
+          FRONTEND_S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
+        run: |
+          aws s3 sync dist/ "s3://${FRONTEND_S3_BUCKET}" \
+            --delete \
+            --exclude "index.html" \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp dist/index.html "s3://${FRONTEND_S3_BUCKET}/index.html" \
+            --cache-control "no-cache,no-store,must-revalidate" \
+            --content-type "text/html"
+
+      - name: Invalidate frontend CloudFront cache
+        if: ${{ vars.FRONTEND_CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        env:
+          DISTRIBUTION_ID: ${{ vars.FRONTEND_CLOUDFRONT_DISTRIBUTION_ID }}
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
+
+      - name: Smoke test frontend
+        if: ${{ vars.FRONTEND_PUBLIC_URL != '' }}
+        env:
+          FRONTEND_PUBLIC_URL: ${{ vars.FRONTEND_PUBLIC_URL }}
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 5 "$FRONTEND_PUBLIC_URL"
