@@ -6,6 +6,12 @@ This directory contains the complete Adaptive RAG application:
 - `frontend/`: React + TypeScript chat UI
 - `docs/`: setup, API, deployment, and production notes
 
+Production endpoints:
+
+- Frontend: [https://rag.vinodmaneti.com](https://rag.vinodmaneti.com)
+- Backend health:
+  [https://d27o32245p2wf.cloudfront.net/health](https://d27o32245p2wf.cloudfront.net/health)
+
 The UI includes a live execution trace for uploads and questions, using
 backend-recorded stages and timings for parsing, embeddings, Pinecone,
 prompt caching, Claude generation, and citations.
@@ -16,6 +22,13 @@ ranges, overlap bands, embedding samples, and the Pinecone destination.
 After each answer, the UI renders the real query vector preview, ranked
 Pinecone scores and excerpts, prompt inputs, cache behavior, model token usage,
 and final citation count directly beneath that answer.
+
+The name "Adaptive RAG" refers to document-type-aware processing,
+document-specific embeddings, query-specific retrieval, conversation context,
+Pinecone state restoration, and conditional Claude prompt caching. Retrieval
+depth, chunking, routing, query rewriting, reranking, and citation verification
+are not yet dynamically controlled. See the root
+[README](../README.md#why-adaptive-rag) for the complete scope and limitations.
 
 Start here:
 

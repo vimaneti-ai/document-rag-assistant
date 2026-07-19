@@ -180,20 +180,21 @@ history when those records also need durable storage.
 Current AWS path:
 
 ```text
-Backend: Elastic Beanstalk Python 3.11
-Frontend: Amplify or static hosting
+Frontend: CloudFront + ACM + Route 53 -> private S3 origin
+Backend: CloudFront -> Nginx -> Uvicorn/FastAPI on EC2
+Process manager: PM2
+Deployment: GitHub Actions OIDC -> Systems Manager -> EC2
+Vectors: Pinecone serverless
 ```
 
-Elastic Beanstalk notes:
+The current public endpoints are:
 
-- Use `backend/Procfile` to run Uvicorn.
-- Use `gp3` storage with enough disk for `torch` and related ML packages.
-- Use `t3.medium` or larger if dependency install or embedding model memory is tight.
-- Use `PIP_NO_CACHE_DIR=true` and the included prebuild hook to reduce pip disk pressure.
-- Add the Pinecone API key, index, namespace, cloud, and region variables.
-- Single-instance EB is HTTP by default; put HTTPS in front before public use.
+```text
+Frontend: https://rag.vinodmaneti.com
+Backend: https://d27o32245p2wf.cloudfront.net
+```
 
-Recommended production direction:
+Possible future production direction:
 
 ```text
 Frontend: AWS Amplify or S3 + CloudFront
@@ -220,6 +221,21 @@ ECS Fargate is more reliable for this app than EB because the heavy Python/ML de
 - Original uploaded files and chat history are not persisted.
 - Large files and large dependency installs require more disk and memory than a tiny EC2 instance provides.
 - Prompt caching reduces repeated document-context cost, but the first request after upload can be slower and more expensive.
+- Chunk size and overlap are fixed rather than selected per document.
+- Similarity search uses a fixed top-four retrieval depth.
+- There is no question router, automatic query rewriting, hybrid retrieval, or
+  separate reranking stage.
+- Weak retrieval does not automatically trigger a second retrieval attempt.
+- Citations are exposed to the user but are not independently verified.
+- The application is a single RAG pipeline, not a multi-agent router,
+  retrieval, answer, and verification workflow.
+
+The "Adaptive RAG" name currently refers to document-type-aware processing,
+document-specific indexing, query-specific retrieval, conversation context,
+state restoration, conditional prompt caching, and live pipeline visibility.
+A fully adaptive implementation would select its retrieval strategy and depth,
+rewrite or retry weak questions, rerank evidence, and verify grounding before
+returning the final answer.
 
 ## Verification
 

@@ -27,7 +27,7 @@ PINECONE_CLOUD=aws
 PINECONE_REGION=us-east-1
 APP_BASIC_AUTH_USERNAME=admin
 APP_BASIC_AUTH_PASSWORD=use-a-long-random-password
-CORS_ORIGINS=http://rag-assistant-vinod.s3-website.us-east-2.amazonaws.com
+CORS_ORIGINS=https://rag.vinodmaneti.com
 MAX_UPLOAD_MB=25
 MAX_CACHED_CONTEXT_CHARS=120000
 ```
@@ -68,26 +68,56 @@ npm install
 npm run build
 ```
 
-Deploy the current build to the S3 website bucket:
+Deploy the current build to the S3 origin bucket:
 
 ```bash
-aws s3 sync dist/ s3://rag-assistant-vinod --delete
+aws s3 sync dist/ s3://rag-assistant-vinod \
+  --delete \
+  --exclude "index.html" \
+  --cache-control "public,max-age=31536000,immutable"
+aws s3 cp dist/index.html s3://rag-assistant-vinod/index.html \
+  --cache-control "no-cache,no-store,must-revalidate" \
+  --content-type "text/html"
+aws cloudfront create-invalidation \
+  --distribution-id EO2S42NNE2S8X \
+  --paths "/*"
 ```
 
 Current frontend URL:
 
 ```text
-http://rag-assistant-vinod.s3-website.us-east-2.amazonaws.com
+https://rag.vinodmaneti.com
 ```
 
 Users will be prompted to sign in with the backend Basic Auth username and password.
 After three minutes of inactivity, the frontend removes the stored credentials
 and returns the user to the sign-in screen.
 
+The frontend CloudFront distribution terminates HTTPS with an ACM certificate
+for `rag.vinodmaneti.com` and reads the S3 bucket through Origin Access
+Control. Route 53 maps the custom hostname to CloudFront. The S3 bucket is the
+deployment destination, not the public application URL.
+
 ## Local Proxy
 
-During development, Vite proxies `/api/*` to `http://localhost:8000`. In production, use `VITE_API_BASE_URL` or a reverse proxy that routes `/api` to the backend.
+During development, Vite proxies `/api/*` to `http://localhost:8000`. In
+production, `VITE_API_BASE_URL` points to the HTTPS backend CloudFront
+distribution.
 
-The S3 website endpoint supports HTTP only. Put CloudFront and an ACM
-certificate in front of the frontend before treating the deployment as
-production, then replace `CORS_ORIGINS` with the final HTTPS frontend origin.
+## Current AWS Request Flow
+
+```text
+Browser
+  -> https://rag.vinodmaneti.com
+  -> frontend CloudFront (EO2S42NNE2S8X)
+  -> private S3 origin
+  -> React calls https://d27o32245p2wf.cloudfront.net
+  -> backend CloudFront (EO506AR7PQ60S)
+  -> Nginx on EC2
+  -> Uvicorn/FastAPI on port 8000
+  -> Pinecone and Anthropic
+```
+
+The backend CloudFront behavior uses `Managed-CachingDisabled` and
+`Managed-AllViewer`, allowing protected API requests and their `Authorization`
+headers to reach FastAPI without caching API responses.

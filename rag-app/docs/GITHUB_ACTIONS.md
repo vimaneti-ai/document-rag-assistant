@@ -189,8 +189,8 @@ Add these environment variables:
 | `FRONTEND_S3_BUCKET` | `rag-assistant-vinod` |
 | `VITE_API_BASE_URL` | `https://d27o32245p2wf.cloudfront.net` |
 | `VITE_INACTIVITY_TIMEOUT_MS` | `180000` |
-| `FRONTEND_PUBLIC_URL` | Current frontend URL |
-| `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID` | Optional frontend distribution ID |
+| `FRONTEND_PUBLIC_URL` | `https://rag.vinodmaneti.com` |
+| `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID` | `EO2S42NNE2S8X` |
 
 These are identifiers and build configuration, not API secrets. Keep Anthropic,
 Pinecone, and Basic Auth values in the EC2 `.env` or AWS Secrets Manager.
@@ -198,6 +198,12 @@ Pinecone, and Basic Auth values in the EC2 `.env` or AWS Secrets Manager.
 For additional safety, enable required reviewers on the `production`
 environment. The workflow will wait for approval before deployment can use the
 AWS role.
+
+The current frontend CloudFront distribution uses the ACM certificate for
+`rag.vinodmaneti.com`, a Route 53 alias, and the private
+`rag-assistant-vinod` S3 origin. Its deployment role must include
+`cloudfront:CreateInvalidation` for distribution `EO2S42NNE2S8X`; otherwise
+the application upload succeeds but the workflow fails at cache invalidation.
 
 ## 5. First Deployment
 

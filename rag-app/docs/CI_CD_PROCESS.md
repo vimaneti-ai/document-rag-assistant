@@ -25,6 +25,8 @@ this project, CD:
 2. Restarts FastAPI through PM2.
 3. Verifies the backend health endpoint.
 4. Publishes the React frontend to S3.
+5. Invalidates the frontend CloudFront cache.
+6. Smoke-tests the custom HTTPS frontend.
 
 Pull requests run CI only. A successful push to `main` runs both CI and CD.
 
@@ -58,6 +60,10 @@ GitHub Actions: Test and Deploy
    +---- Production React build
    |
    +---- S3 synchronization
+   |
+   +---- Frontend CloudFront invalidation
+   |
+   +---- HTTPS frontend smoke test
 ```
 
 The deployed application traffic follows a separate path:
@@ -65,7 +71,10 @@ The deployed application traffic follows a separate path:
 ```text
 Browser
    |
-   +---- S3 website --------> React frontend
+   +---- rag.vinodmaneti.com
+   |          |
+   |          v
+   |     Frontend CloudFront -> private S3 origin -> React frontend
    |
    +---- Backend CloudFront -> Nginx on EC2 -> Uvicorn -> FastAPI
                                                     |
@@ -88,8 +97,11 @@ Browser
 | PM2 | Keeps Uvicorn running and restarts it during deployment |
 | Uvicorn | Serves the FastAPI application |
 | Nginx | Proxies HTTP traffic to Uvicorn |
-| S3 | Hosts the compiled React frontend |
-| CloudFront | Provides the public HTTPS endpoint for the backend |
+| S3 | Stores the compiled React frontend as a private CloudFront origin |
+| Frontend CloudFront | Serves `rag.vinodmaneti.com` over HTTPS |
+| Backend CloudFront | Provides the public HTTPS API endpoint |
+| ACM | Provides the TLS certificate for `rag.vinodmaneti.com` |
+| Route 53 | Maps the frontend hostname to CloudFront |
 | Pinecone | Stores document vectors and document state |
 | Anthropic | Generates document-grounded answers |
 
@@ -226,7 +238,7 @@ The deployment role has an inline policy that permits:
 - Uploading and deleting frontend objects.
 - Sending `AWS-RunShellScript` to the designated EC2 instance.
 - Reading the resulting SSM command status.
-- Optionally invalidating the frontend CloudFront distribution.
+- Invalidating the frontend CloudFront distribution.
 
 The role does not have `AdministratorAccess`, access to application API keys,
 or general command access to every EC2 instance.
@@ -249,7 +261,7 @@ It stores non-secret identifiers and build configuration:
 | `VITE_API_BASE_URL` | Public HTTPS backend URL compiled into React |
 | `VITE_INACTIVITY_TIMEOUT_MS` | Frontend automatic logout interval |
 | `FRONTEND_PUBLIC_URL` | URL used for the frontend smoke test |
-| `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID` | Optional cache invalidation target |
+| `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID` | Frontend cache invalidation target |
 
 Application secrets are not GitHub environment variables. They remain in the
 ignored EC2 `rag-app/backend/.env` file or should be migrated to AWS Secrets
@@ -399,8 +411,8 @@ It:
 5. Deletes S3 files that no longer exist in the build.
 6. Assigns long-lived immutable caching to hashed assets.
 7. Assigns `no-cache` to `index.html`.
-8. Optionally invalidates CloudFront.
-9. Optionally performs an HTTP smoke test against the frontend.
+8. Invalidates the frontend CloudFront distribution when its ID is configured.
+9. Performs an HTTPS smoke test when the public URL is configured.
 
 Hashed assets can be cached for one year because a content change generates a
 new filename. `index.html` must not be cached long term because it identifies
@@ -422,6 +434,18 @@ confirmed:
 - The S3 website returned HTTP 200.
 - `index.html` had `no-cache,no-store,must-revalidate`.
 - Its S3 modification time matched the GitHub Actions release.
+
+The later HTTPS frontend release added:
+
+- The `rag.vinodmaneti.com` ACM certificate in `us-east-1`.
+- Frontend CloudFront distribution `EO2S42NNE2S8X`.
+- Origin Access Control for the `rag-assistant-vinod` S3 bucket.
+- A Route 53 alias for the custom domain.
+- CloudFront invalidation permission for the GitHub deployment role.
+
+The first run with the new distribution reached the invalidation step but
+failed with `AccessDenied`. Adding `cloudfront:CreateInvalidation` for
+`EO2S42NNE2S8X` fixed the policy, and the rerun completed successfully.
 
 ## 18. Normal Development Process
 
@@ -470,7 +494,7 @@ Check the public application:
 
 ```bash
 curl --fail https://d27o32245p2wf.cloudfront.net/health
-curl -I http://rag-assistant-vinod.s3-website.us-east-2.amazonaws.com
+curl -I https://rag.vinodmaneti.com
 ```
 
 Then use the browser to test:
@@ -499,6 +523,9 @@ Then use the browser to test:
 | Frontend and API URLs could be confused | React could send API calls to S3 | Separated `FRONTEND_PUBLIC_URL` and `VITE_API_BASE_URL` |
 | Long-lived AWS keys were an option | Credential leakage and rotation risk | Used GitHub OIDC temporary credentials |
 | Frontend could deploy after a failed backend | UI and API versions could diverge | Made frontend deployment depend on backend success |
+| Frontend S3 website supported only HTTP | Login page could not safely send Basic Auth credentials | Added CloudFront, ACM, Route 53, and a custom HTTPS domain |
+| New CloudFront invalidation returned `AccessDenied` | Deployment uploaded files but the workflow failed | Granted `cloudfront:CreateInvalidation` for the frontend distribution |
+| `/status` briefly returned `401` during testing | Authentication forwarding was uncertain | Verified `Managed-AllViewer` forwards `Authorization`; valid login succeeds |
 
 ## 21. Security Model
 
@@ -515,10 +542,11 @@ The pipeline protects credentials in several ways:
 - Basic Auth protects application endpoints.
 - `/health` remains public for infrastructure checks.
 
-The current frontend S3 website uses HTTP. Before treating the application as
-fully production-ready, serve the frontend through CloudFront HTTPS and update
-`FRONTEND_PUBLIC_URL` and `CORS_ORIGINS`. An HTTP page that accepts credentials
-can be modified in transit even when its API endpoint uses HTTPS.
+The frontend and backend are both served through HTTPS CloudFront
+distributions. The frontend certificate is managed by ACM, Route 53 maps the
+custom domain, and the S3 origin is accessed through CloudFront Origin Access
+Control. `CORS_ORIGINS` must continue to include the exact production frontend
+origin, `https://rag.vinodmaneti.com`.
 
 ## 22. Current Limitations
 
@@ -533,15 +561,14 @@ can be modified in transit even when its API endpoint uses HTTPS.
 
 Recommended next improvements:
 
-1. Put the frontend behind CloudFront HTTPS.
-2. Remove public EC2 port 8000 access after confirming CloudFront uses Nginx
+1. Remove public EC2 port 8000 access after confirming CloudFront uses Nginx
    port 80.
-3. Move backend secrets to AWS Secrets Manager or Parameter Store.
-4. Add CloudWatch alarms and centralized logs.
-5. Add an approval reviewer to the GitHub `production` environment.
-6. Build a backend deployment artifact or container instead of installing all
+2. Move backend secrets to AWS Secrets Manager or Parameter Store.
+3. Add CloudWatch alarms and centralized logs.
+4. Add an approval reviewer to the GitHub `production` environment.
+5. Build a backend deployment artifact or container instead of installing all
    dependencies during every release.
-7. Add per-user authentication and Pinecone namespaces before multi-user use.
+6. Add per-user authentication and Pinecone namespaces before multi-user use.
 
 ## 23. Short Explanation For Reviewers
 
@@ -553,6 +580,7 @@ Recommended next improvements:
 > Uvicorn process through PM2, and verifies `/health`. If the health check
 > fails, it restores the previous commit and tracked server patch. Only after
 > the backend is healthy does the workflow build React and synchronize it to
-> S3 with appropriate cache headers. The result is a repeatable, auditable
-> deployment with testing, least-privilege AWS access, health verification,
-> and rollback protection.
+> the private S3 origin with appropriate cache headers, invalidate the frontend
+> CloudFront distribution, and smoke-test `https://rag.vinodmaneti.com`. The
+> result is a repeatable, auditable deployment with testing, least-privilege
+> AWS access, HTTPS delivery, health verification, and rollback protection.

@@ -26,9 +26,19 @@ and frontend projects.
 ```text
 Browser
   |
-  | React chat UI, upload controls, session timeout
   v
-FastAPI API
+Frontend CloudFront + ACM
+  |
+  | private S3 origin
+  v
+React chat UI, upload controls, session timeout
+  |
+  | HTTPS + Basic Auth
+  v
+Backend CloudFront
+  |
+  v
+Nginx -> Uvicorn -> FastAPI on EC2
   |
   | validation, parsing, chunking
   v
@@ -67,6 +77,45 @@ Answer, sources, token usage, cache status, and estimated cost
 - Follow each question through its query embedding, ranked Pinecone matches,
   prompt composition, Claude cache behavior, and grounded answer citations.
 - Provide an unauthenticated `/health` endpoint for platform health checks.
+
+## Why "Adaptive RAG"?
+
+The product name describes how the application responds to the active document
+and each question:
+
+- It selects the appropriate parser for PDF, DOCX, TXT, Markdown, or CSV input.
+- It creates a new set of chunks and embeddings for the uploaded document.
+- It performs a new similarity search for every question, so the retrieved
+  evidence changes with the query.
+- It includes bounded conversation history when generating follow-up answers.
+- It restores the active document context from Pinecone after a backend
+  restart or deployment.
+- It uses Claude prompt caching when the document context meets Anthropic's
+  cache eligibility requirements.
+- It exposes the actual ingestion, retrieval, cache, generation, and citation
+  behavior in the UI instead of presenting the pipeline as a black box.
+
+The current system is a document RAG assistant with adaptive runtime behavior;
+it is not yet a fully autonomous adaptive-retrieval system. The name also
+represents the intended direction of the project.
+
+### Current Adaptive-Retrieval Limits
+
+- Chunk size and overlap are fixed at 1,000 and 150 characters.
+- Retrieval always requests the top four chunks.
+- Questions are not classified before retrieval.
+- Ambiguous questions are not automatically rewritten.
+- The system does not decide that retrieval is unnecessary for a question.
+- It does not switch between semantic, keyword, hybrid, or metadata retrieval.
+- Retrieved chunks are not passed through a separate reranking model.
+- Low-quality retrieval does not trigger an automatic rewrite-and-retry loop.
+- Citations are displayed but are not checked by an independent verifier.
+- There is no multi-agent router, retrieval agent, answer agent, or citation
+  verifier.
+
+A more advanced adaptive flow could analyze the question, choose a retrieval
+strategy and depth, rewrite weak queries, rerank evidence, generate the answer,
+verify its citations, and retry when grounding is insufficient.
 
 ## Project Evolution
 
@@ -237,14 +286,17 @@ npm run build
 
 ## Production Notes
 
-- Current S3 frontend:
-  `http://rag-assistant-vinod.s3-website.us-east-2.amazonaws.com`
+- Current HTTPS frontend:
+  `https://rag.vinodmaneti.com`
 - Current backend API:
   `https://d27o32245p2wf.cloudfront.net`
+- The frontend CloudFront distribution reads the React build from the private
+  `rag-assistant-vinod` S3 bucket through Origin Access Control.
+- GitHub Actions deploys the backend to EC2 through Systems Manager, publishes
+  the frontend to S3, and invalidates the frontend CloudFront distribution.
 - Store API keys and passwords in AWS Secrets Manager, SSM Parameter Store, or
   protected environment variables.
 - Rotate any credential exposed in chat, screenshots, logs, or documentation.
-- Put HTTPS in front of the backend before allowing public access.
 - Replace Basic Auth with Cognito, Auth0, or organizational SSO for multi-user
   production.
 - Use S3 if original uploaded files must persist.
